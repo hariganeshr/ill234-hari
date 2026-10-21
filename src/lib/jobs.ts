@@ -30,3 +30,55 @@ export function formatPostedDate(iso: string): string {
         timeZone: 'UTC',
     });
 }
+
+/** Selected filter values; an empty string means "All". */
+export interface RoleFilterCriteria {
+    /** Selected department name, or an empty string for all departments. */
+    department: string;
+    /** Selected location, or an empty string for all locations. */
+    location: string;
+}
+
+/**
+ * Collect the distinct departments from a list of jobs.
+ *
+ * @param jobs - Jobs to read departments from.
+ * @returns Unique department names, sorted alphabetically.
+ */
+export function getDepartments(jobs: Job[]): string[] {
+    return [...new Set(jobs.map((job) => job.department))].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Collect the distinct locations from a list of jobs.
+ *
+ * @param jobs - Jobs to read locations from.
+ * @returns Unique locations, sorted alphabetically.
+ */
+export function getLocations(jobs: Job[]): string[] {
+    return [...new Set(jobs.map((job) => job.location))].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Filter jobs by department and/or location. An empty value is ignored; when
+ * both are set a job matches if it satisfies either one (OR).
+ *
+ * @typeParam T - Any object exposing a department and a location.
+ * @param jobs - Items to filter (not mutated).
+ * @param criteria - Selected department and location; empty strings mean "All".
+ * @returns A new array of the matching items, in their original order.
+ */
+export function filterJobs<T extends Pick<Job, 'department' | 'location'>>(
+    jobs: T[],
+    criteria: RoleFilterCriteria,
+): T[] {
+    const { department, location } = criteria;
+    if (!department && !location) {
+        return [...jobs];
+    }
+    return jobs.filter(
+        (job) =>
+            (department !== '' && job.department === department) ||
+            (location !== '' && job.location === location),
+    );
+}
