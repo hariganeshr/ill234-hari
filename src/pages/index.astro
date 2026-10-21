@@ -3,7 +3,8 @@ import { getCollection } from 'astro:content';
 import Layout from '../layouts/Layout.astro';
 import RoleCard from '../components/RoleCard.astro';
 import EmptyState from '../components/EmptyState.astro';
-import { sortByNewest } from '../lib/jobs';
+import RoleFilters from '../components/RoleFilters.astro';
+import { sortByNewest, getDepartments, getLocations } from '../lib/jobs';
 import type { Job } from '../types/job';
 
 export const prerender = true;
@@ -12,6 +13,8 @@ const entries = await getCollection('jobs');
 const jobs: Job[] = sortByNewest(
     entries.map((entry) => ({ slug: entry.id, ...entry.data })),
 );
+const departments = getDepartments(jobs);
+const locations = getLocations(jobs);
 ---
 
 <Layout title="Caldova Careers — Open roles">
@@ -29,12 +32,93 @@ const jobs: Job[] = sortByNewest(
     {jobs.length === 0 ? (
       <EmptyState text="There are no open roles right now. Check back soon." />
     ) : (
-      <div
-        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-        data-testid="roles-grid"
-      >
-        {jobs.map((job) => <RoleCard job={job} />)}
-      </div>
+      <>
+        <RoleFilters departments={departments} locations={locations} />
+        <p class="mb-4 text-sm text-slate-400" role="status" aria-live="polite" data-testid="results-count"></p>
+        <div
+          class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+          data-testid="roles-grid"
+        >
+          {jobs.map((job) => <RoleCard job={job} />)}
+        </div>
+        <div id="no-matches" hidden>
+          <EmptyState text="No roles match your filters. Try a different department or location, or reset the filters." />
+        </div>
+      </>
     )}
   </div>
 </Layout>
+
+<script>
+  import { filterJobs } from '../lib/jobs';
+
+  const departmentSelect = document.querySelector<HTMLSelectElement>('[data-testid="department-filter"]');
+  const locationSelect = document.querySelector<HTMLSelectElement>('[data-testid="location-filter"]');
+  const resetButton = document.querySelector<HTMLButtonElement>('[data-testid="filters-reset"]');
+  const countText = document.querySelector<HTMLElement>('[data-testid="results-count"]');
+  const noMatches = document.getElementById('no-matches');
+  const grid = document.querySelector<HTMLElement>('[data-testid="roles-grid"]');
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="role-card"]'));
+
+  /**
+   * Show only the cards matching the selected filters, update the results
+   * count and empty state, and optionally mirror the selection into the URL.
+   *
+   * @param updateUrl - Whether to write the selection to the query string.
+   */
+  function applyFilters(updateUrl: boolean): void {
+    if (!departmentSelect || !locationSelect || !grid || !noMatches || !countText) return;
+    const department = departmentSelect.value;
+    const location = locationSelect.value;
+    const items = cards.map((element) => ({
+      element,
+      department: element.dataset.department ?? '',
+      location: element.dataset.location ?? '',
+    }));
+    const visible = new Set(filterJobs(items, { department, location }).map((item) => item.element));
+    cards.forEach((card) => {
+      card.hidden = !visible.has(card);
+    });
+    grid.hidden = visible.size === 0;
+    noMatches.hidden = visible.size !== 0;
+    countText.textContent = `Showing ${visible.size} of ${cards.length} roles`;
+
+    if (updateUrl) {
+      const params = new URLSearchParams();
+      if (department) params.set('department', department);
+      if (location) params.set('location', location);
+      const query = params.toString();
+      history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
+    }
+  }
+
+  /**
+   * Select a value in a dropdown, adding an option first when the value
+   * (for example from a stale URL) is not already listed.
+   *
+   * @param select - The dropdown to update.
+   * @param value - The value to select; empty selects "All".
+   */
+  function setSelectValue(select: HTMLSelectElement, value: string): void {
+    const hasOption = Array.from(select.options).some((option) => option.value === value);
+    if (value && !hasOption) {
+      select.add(new Option(value, value));
+    }
+    select.value = value;
+  }
+
+  const initialParams = new URLSearchParams(window.location.search);
+  if (departmentSelect && locationSelect) {
+    setSelectValue(departmentSelect, initialParams.get('department') ?? '');
+    setSelectValue(locationSelect, initialParams.get('location') ?? '');
+  }
+  applyFilters(false);
+
+  departmentSelect?.addEventListener('change', () => applyFilters(true));
+  locationSelect?.addEventListener('change', () => applyFilters(true));
+  resetButton?.addEventListener('click', () => {
+    if (departmentSelect) departmentSelect.value = '';
+    if (locationSelect) locationSelect.value = '';
+    applyFilters(true);
+  });
+</script>
